@@ -17,7 +17,6 @@ active_keys = {}
 live_cards = []
 stop_flags = {}
 
-# Admin auto access
 allowed_users[ADMIN_ID] = datetime.now() + timedelta(days=999)
 
 proxies_list = [
@@ -48,11 +47,16 @@ def get_proxy():
 def start(m):
     user_id = m.from_user.id
     if user_id in allowed_users and allowed_users[user_id] > datetime.now():
-        bot.send_message(m.chat.id, "✅ **Access Granted**")
-        print_log(f"User {user_id} started bot - Access Granted")
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("🚀 Start Checking", callback_data="start_checking"))
+        bot.send_message(m.chat.id, "Let’s check cc send txt file and tap on start checking 🥂", reply_markup=markup)
+        print_log(f"User {user_id} started bot")
     else:
         bot.send_message(m.chat.id, "🔐 **Access Declined**\n\nKey redeem karo: `/redeem <key>`")
-        print_log(f"User {user_id} tried - Access Declined")
+
+@bot.callback_query_handler(func=lambda call: call.data == "start_checking")
+def start_checking(call):
+    bot.send_message(call.message.chat.id, "📁 Ab txt file bhej do mass check ke liye")
 
 @bot.message_handler(commands=['redeem'])
 def redeem_key(m):
@@ -63,66 +67,10 @@ def redeem_key(m):
     if key in active_keys and active_keys[key] > datetime.now():
         allowed_users[m.from_user.id] = active_keys[key]
         bot.reply_to(m, f"✅ **Key Accepted!**\nExpiry: {active_keys[key].strftime('%Y-%m-%d')}")
-        print_log(f"User {m.from_user.id} redeemed key successfully")
+        print_log(f"User {m.from_user.id} redeemed key")
         del active_keys[key]
     else:
         bot.reply_to(m, "❌ **Invalid or Expired Key**")
-        print_log(f"User {m.from_user.id} tried invalid key")
-
-@bot.message_handler(commands=['admin'])
-def admin_panel(m):
-    if m.from_user.id != ADMIN_ID:
-        bot.reply_to(m, "❌ Admin only")
-        return
-
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    markup.add(
-        types.InlineKeyboardButton("🔑 30 Days Key", callback_data="gen_key_30"),
-        types.InlineKeyboardButton("🔑 7 Days Key", callback_data="gen_key_7"),
-        types.InlineKeyboardButton("👥 User List", callback_data="user_list"),
-        types.InlineKeyboardButton("💳 Live Cards", callback_data="show_live")
-    )
-    bot.send_message(m.chat.id, "🛠 **Admin Panel**", reply_markup=markup)
-
-@bot.callback_query_handler(func=lambda call: True)
-def admin_callback(call):
-    if call.from_user.id != ADMIN_ID:
-        return
-
-    if call.data == "gen_key_30":
-        key = generate_key()
-        expiry = datetime.now() + timedelta(days=30)
-        active_keys[key] = expiry
-        bot.send_message(call.message.chat.id, f"✅ **30 Days Key**\n`{key}`\nExpiry: {expiry.strftime('%Y-%m-%d')}")
-        print_log(f"Admin generated 30 days key")
-
-    elif call.data == "gen_key_7":
-        key = generate_key()
-        expiry = datetime.now() + timedelta(days=7)
-        active_keys[key] = expiry
-        bot.send_message(call.message.chat.id, f"✅ **7 Days Key**\n`{key}`\nExpiry: {expiry.strftime('%Y-%m-%d')}")
-        print_log(f"Admin generated 7 days key")
-
-    elif call.data == "user_list":
-        if not allowed_users:
-            bot.send_message(call.message.chat.id, "Koi active user nahi")
-        else:
-            text = "👥 **Active Users:**\n\n"
-            for uid, exp in allowed_users.items():
-                text += f"ID: `{uid}` | Expiry: {exp.strftime('%Y-%m-%d')}\n"
-            bot.send_message(call.message.chat.id, text)
-
-    elif call.data == "show_live":
-        if not live_cards:
-            bot.send_message(call.message.chat.id, "Koi live card nahi")
-        else:
-            text = "💳 **Live Cards:**\n\n" + "\n".join(live_cards[-30:])
-            bot.send_message(call.message.chat.id, text)
-
-# Mass Check
-@bot.message_handler(commands=['chk'])
-def chk_file(m):
-    bot.send_message(m.chat.id, "📁 Cards wali .txt file bhej")
 
 @bot.message_handler(content_types=['document'])
 def handle_file(m):
