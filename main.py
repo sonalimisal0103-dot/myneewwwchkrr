@@ -6,7 +6,7 @@ import string
 from datetime import datetime, timedelta
 import sys
 
-bot = TeleBot("7700737624:AAEKOb2kJFTN6g-Cod4vDphfpqlJSsjzoHU")
+bot = TeleBot("8663863938:AAEf7TUyJfwhOGxCsY6yfSzNl-oRUV4hPmU")
 
 GATEWAY = "http://138.128.240.15:8025/paypal_donate?cc="
 
