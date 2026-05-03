@@ -10,7 +10,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s | %(levelname)s | %(
 logger = logging.getLogger(__name__)
 
 # ========================= CONFIG =========================
-BOT_TOKEN = '8783810252:AAEv2GtOJYG_-iBv1AMjvV8Le3kZBo9FJb0'
+BOT_TOKEN = '8663863938:AAG1yVZYZLrbRcSIWLBiN7MJFqnmV3i2CqE'
 ADMIN_ID = 7077294261
 
 FREE_LIMIT = 0
