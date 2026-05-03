@@ -2,7 +2,7 @@ from telebot import TeleBot
 import requests
 import sys
 
-bot = TeleBot("7700737624:AAEKOb2kJFTN6g-Cod4vDphfpqlJSsjzoHU")
+bot = TeleBot("7700737624:AAGyS459SbTTOwLFJauPBChP5fxc1D8LRiM")
 
 GATEWAY = "http://138.128.240.15:8024/paypal_1?cc="
 
